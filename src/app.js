@@ -24,6 +24,17 @@ const state = {
   confidence: 34,
   result: null,
   toast: "",
+  aiPending: false,
+  aiStatus: null,
+  aiDebug: {
+    loading: false,
+    checkedAt: "",
+    health: null,
+    config: null,
+    error: "",
+    lastRequestId: "",
+    lastFallbackReason: "",
+  },
 };
 
 const app = document.querySelector("#app");
@@ -234,9 +245,17 @@ function startChat(symptom = "") {
 
 function chatView() {
   const currentQuestion = activeQuestions()[state.questionIndex];
+  const aiSubtitle =
+    aiAdapter.mode === "llm" ? "真实 AI 辅助理解" : aiAdapter.mode === "llm_shadow" ? "真实 AI 灰度观察" : "模拟 AI 对话";
+  const aiStatus = aiStatusMeta();
   return shell(`
     <section class="content" style="padding-bottom:138px;">
       <div class="notice">请一次性完成本次自查，中途退出后建议重新开始，以免遗漏关键信息。</div>
+      ${
+        aiStatus
+          ? `<div class="notice ${aiStatus.className}" style="margin-top:10px;">${aiStatus.text}</div>`
+          : ""
+      }
       <div style="height:12px"></div>
       <div class="chat-area">
         ${state.messages.map(messageHtml).join("")}
@@ -255,12 +274,26 @@ function chatView() {
         <div class="meter"><div class="meter-fill" style="width:${state.confidence}%; background:${confidenceColor(state.confidence)}"></div></div>
       </div>
       <form class="chat-form" onsubmit="submitFreeText(event)">
-        <input id="chatInput" class="text-input" autocomplete="off" placeholder="补充症状或回答问题" />
-        <button class="icon-btn" type="button" onclick="showToast('语音输入将在后续版本开放')" aria-label="语音输入">${icon.mic}</button>
-        <button class="icon-btn" type="submit" aria-label="发送">${icon.send}</button>
+        <input id="chatInput" class="text-input" autocomplete="off" placeholder="${state.aiPending ? "正在理解..." : "补充症状或回答问题"}" ${state.aiPending ? "disabled" : ""} />
+        <button class="icon-btn" type="button" onclick="showToast('语音输入将在后续版本开放')" aria-label="语音输入" ${state.aiPending ? "disabled" : ""}>${icon.mic}</button>
+        <button class="icon-btn" type="submit" aria-label="发送" ${state.aiPending ? "disabled" : ""}>${icon.send}</button>
       </form>
     </div>
-  `, { title: "症状自查", subtitle: "模拟 AI 对话", back: "setView('home','home')", hideTabs: true });
+  `, { title: "症状自查", subtitle: aiSubtitle, back: "setView('home','home')", hideTabs: true });
+}
+
+function aiStatusMeta() {
+  if (state.aiPending) {
+    return { className: "", text: "正在使用真实 AI 理解你的描述..." };
+  }
+  if (!state.aiStatus) return null;
+  const copy = {
+    ok: { className: "risk-green", text: "真实 AI 已完成理解，风险判断仍由本地医学规则完成。" },
+    shadow_ok: { className: "", text: "真实 AI 已完成灰度观察，本次路径仍使用本地规则。" },
+    fallback: { className: "warning", text: "AI 理解暂不可用，已使用本地规则继续自查。" },
+    invalid_llm_output: { className: "warning", text: "AI 输出未通过安全校验，已使用本地规则继续自查。" },
+  };
+  return copy[state.aiStatus] || null;
 }
 
 function activeQuestions() {
@@ -284,15 +317,36 @@ function questionPurpose(question) {
   return aiAdapter.getQuestionPurpose(question);
 }
 
-function submitFreeText(event) {
+async function submitFreeText(event) {
   event.preventDefault();
+  if (state.aiPending) return;
   const input = document.querySelector("#chatInput");
   const text = input.value.trim();
   if (!text) return;
   input.value = "";
   state.messages.push({ from: "user", text });
+  state.aiPending = true;
+  render();
 
-  const inputUnderstanding = aiAdapter.understandInput(text, aiContext());
+  const inputUnderstanding = await understandFreeText(text);
+  state.aiPending = false;
+  state.aiStatus = inputUnderstanding.proxyStatus || (inputUnderstanding.source === "llm" ? "ok" : null);
+  state.aiDebug.lastRequestId = inputUnderstanding.requestId || state.aiDebug.lastRequestId || "";
+  if (inputUnderstanding.proxyStatus === "shadow_ok") {
+    recordAnalyticsEvent("ai_shadow_understanding", {
+      localSymptom: inputUnderstanding.symptom,
+      llmSymptom: inputUnderstanding.shadowUnderstanding?.symptom || "",
+      localRedFlag: inputUnderstanding.redFlag,
+      llmRedFlag: inputUnderstanding.shadowUnderstanding?.redFlag || "",
+    });
+  }
+  if (inputUnderstanding.proxyStatus === "fallback" || inputUnderstanding.proxyStatus === "invalid_llm_output") {
+    state.aiDebug.lastFallbackReason = inputUnderstanding.proxyError || inputUnderstanding.proxyStatus;
+    recordAnalyticsEvent("ai_proxy_fallback", {
+      reason: inputUnderstanding.proxyError || inputUnderstanding.proxyStatus,
+    });
+    showToast(state.aiStatus === "invalid_llm_output" ? "AI 输出未通过校验，已回退本地规则" : "AI 暂不可用，已回退本地规则");
+  }
   const detected = inputUnderstanding.symptom;
   if (!state.selectedSymptom && detected) {
     state.selectedSymptom = detected;
@@ -323,6 +377,13 @@ function submitFreeText(event) {
     state.confidence = Math.min(88, state.confidence + 8);
     askNextQuestion();
   }
+}
+
+async function understandFreeText(text) {
+  if (typeof aiAdapter.understandInputAsync === "function") {
+    return aiAdapter.understandInputAsync(text, aiContext());
+  }
+  return aiAdapter.understandInput(text, aiContext());
 }
 
 function askNextQuestion() {
@@ -950,6 +1011,7 @@ function clearAnalyticsData() {
 }
 
 function mineView() {
+  const debug = aiDebugSummary();
   return shell(`
     <section class="content">
       <div class="section panel">
@@ -964,13 +1026,68 @@ function mineView() {
       <div class="section menu-list">
         <button class="menu-item" onclick="setView('history','history')"><span>我的自查记录</span>${icon.arrow}</button>
         <button class="menu-item" onclick="setView('analytics','mine')"><span>数据看板</span><span class="tag">本地</span></button>
+        <button class="menu-item" onclick="checkAiDebug()"><span>AI 接入状态</span><span class="tag">${debug.status}</span></button>
         <button class="menu-item" onclick="showToast('即将支持为家人自查')"><span>家庭成员</span><span class="tag">即将上线</span></button>
         <button class="menu-item" onclick="showToast('设置能力将在云端版接入')"><span>设置</span>${icon.arrow}</button>
         <button class="menu-item" onclick="showToast('SymptomMate MVP 原型 v1.0')"><span>关于我们</span>${icon.arrow}</button>
       </div>
+      <div class="section panel">
+        <h2>AI 调试</h2>
+        <div class="info-grid">
+          <div class="kv"><span>模式</span><span>${debug.mode}</span></div>
+          <div class="kv"><span>代理</span><span>${debug.endpoint}</span></div>
+          <div class="kv"><span>模型</span><span>${debug.model}</span></div>
+          <div class="kv"><span>健康</span><span>${debug.health}</span></div>
+          <div class="kv"><span>最近请求</span><span>${debug.lastRequestId}</span></div>
+          <div class="kv"><span>回退原因</span><span>${debug.lastFallbackReason}</span></div>
+        </div>
+      </div>
       <div class="notice">云端登录、家庭成员和隐私协议将在后续版本补齐。本原型用于验证核心自查路径。</div>
     </section>
   `, { title: "我的", subtitle: "访客模式" });
+}
+
+function aiDebugSummary() {
+  const config = window.SYMPTOMMATE_AI_CONFIG || {};
+  const debug = state.aiDebug || {};
+  return {
+    status: debug.loading ? "检查中" : debug.health?.ok ? "正常" : debug.error ? "异常" : "未检查",
+    mode: debug.config?.mode || config.mode || aiAdapter.mode || "-",
+    endpoint: debug.config?.proxyEndpoint || config.proxyEndpoint || "-",
+    model: debug.health?.model || debug.config?.model || "-",
+    health: debug.health?.ok ? "正常" : debug.error || "未检查",
+    lastRequestId: debug.lastRequestId || "-",
+    lastFallbackReason: debug.lastFallbackReason || "-",
+  };
+}
+
+async function checkAiDebug() {
+  const config = window.SYMPTOMMATE_AI_CONFIG || {};
+  state.aiDebug.loading = true;
+  state.aiDebug.error = "";
+  render();
+  try {
+    const [publicConfig, health] = await Promise.all([
+      fetchJson(config.configEndpoint),
+      fetchJson(config.healthEndpoint),
+    ]);
+    state.aiDebug.config = publicConfig;
+    state.aiDebug.health = health;
+    state.aiDebug.checkedAt = new Date().toISOString();
+    showToast("AI 接入状态正常");
+  } catch (error) {
+    state.aiDebug.error = "代理不可用";
+    showToast("AI 接入状态异常");
+  } finally {
+    state.aiDebug.loading = false;
+    render();
+  }
+}
+
+async function fetchJson(url) {
+  const response = await fetch(url, { headers: { Accept: "application/json" } });
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  return response.json();
 }
 
 function labelForAnswer(key) {
@@ -1025,3 +1142,4 @@ window.clearHistory = clearHistory;
 window.openHistory = openHistory;
 window.saveHistoryFromResult = saveHistoryFromResult;
 window.clearAnalyticsData = clearAnalyticsData;
+window.checkAiDebug = checkAiDebug;

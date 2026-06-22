@@ -50,6 +50,19 @@
 | B-05 | 点击“仍然不确定”反馈 | 出现“已记录”提示，并写入本地反馈事件 |
 | B-06 | 结果页点击准备清单、问题清单、转诊单 | 都能进入对应页面并返回结果页 |
 
+## 真实 AI 接入验收
+
+| 编号 | 输入/操作 | 预期 |
+|---|---|---|
+| AI-01 | 启动 `node scripts/ai-proxy.js` 后访问 `/api/health` | 返回 `ok=true`、模型名、API 模式、超时配置和 `hasApiKey` 状态，不返回密钥 |
+| AI-02 | 访问 `/api/config` | 返回前端可用的非敏感配置：模式、代理地址、健康检查地址、模型和 API 模式 |
+| AI-03 | 运行 `node scripts/smoke-ai-proxy-live.js` | 输入“胸痛半小时，伴随呼吸困难”可抽取 `胸痛` 和 `呼吸困难` |
+| AI-04 | 运行 `node scripts/e2e-ai-proxy-check.js` | 红线输入、模糊输入、非法 payload 三类代理边界均符合预期 |
+| AI-05 | 运行 `node scripts/browser-e2e-check.js` | 页面自查流程可进入红线预警页，AI 调试健康检查正常 |
+| AI-06 | 将前端模式设为 `llm_shadow` | 真实 AI 只记录灰度观察事件，不改变用户自查路径 |
+| AI-07 | 关闭代理后输入自由文本 | 页面提示 AI 暂不可用，并回退本地规则继续自查 |
+| AI-08 | 检查 `logs/ai-proxy.log` | 日志为 JSON Lines，包含 requestId、状态、耗时和抽取结果，不包含原始输入或 API Key |
+
 ## 手工测试记录
 
 | 日期 | 测试人 | 症状 | 路径类型 | 结果 | 问题记录 |

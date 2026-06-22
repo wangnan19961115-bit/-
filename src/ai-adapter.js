@@ -1,8 +1,8 @@
 // SymptomMate AI adapter.
-// Current mode: simulated AI backed by local symptom config and medical rules.
-// Future mode: replace these methods with LLM/RAG calls while keeping app.js stable.
+// The model only extracts user-input entities. Local rules still decide risk.
 (function () {
   const LLM_SCHEMA_VERSION = "symptommate.llm-extraction.v1";
+  const DEFAULT_PROXY_ENDPOINT = "http://localhost:8787/api/ai/understand";
   const ALLOWED_GROUPS = ["成年人", "儿童", "老人", "孕产妇", "有基础病"];
   const FORBIDDEN_OUTPUT_KEYS = ["diagnosis", "prescription", "medicine", "treatmentPlan"];
 
@@ -21,6 +21,92 @@
       confidence: symptom ? 0.72 : 0.34,
       source: "simulated_ai",
     };
+  }
+
+  async function understandInputAsync(text, context) {
+    const mode = adapterMode();
+    if (mode === "simulated") return understandInput(text, context);
+
+    const fallback = understandInput(text, context);
+    const proxyResult = await requestProxyUnderstanding(text, context, fallback);
+
+    if (mode === "llm_shadow") {
+      return {
+        ...fallback,
+        proxyStatus: proxyResult.proxyStatus === "ok" ? "shadow_ok" : proxyResult.proxyStatus,
+        shadowUnderstanding: proxyResult.proxyStatus === "ok" ? proxyResult : null,
+      };
+    }
+
+    return proxyResult;
+  }
+
+  async function requestProxyUnderstanding(text, context, fallback) {
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => controller.abort(), proxyTimeoutMs());
+
+    try {
+      const response = await fetch(proxyEndpoint(), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(createLlmInputPayload(text, context)),
+        signal: controller.signal,
+      });
+
+      if (!response.ok) throw new Error(`AI proxy returned ${response.status}`);
+      const body = await response.json();
+      const normalized = normalizeModelExtraction(body.extraction || body, context);
+      const validation = validateUnderstanding(normalized, context);
+
+      if (!validation.valid) {
+        return {
+          ...fallback,
+          source: "simulated_ai",
+          proxyStatus: "invalid_llm_output",
+          validationIssues: validation.issues,
+        };
+      }
+
+      return {
+        ...normalized,
+        normalizedText: normalized.normalizedText || String(text || "").trim(),
+        source: "llm",
+        proxyStatus: "ok",
+        requestId: body.requestId || "",
+      };
+    } catch (error) {
+      return {
+        ...fallback,
+        source: "simulated_ai",
+        proxyStatus: "fallback",
+        proxyError: error?.name === "AbortError" ? "timeout" : "request_failed",
+        requestId: "",
+      };
+    } finally {
+      window.clearTimeout(timeoutId);
+    }
+  }
+
+  function shouldUseProxy() {
+    return adapterMode() === "llm" || adapterMode() === "llm_shadow";
+  }
+
+  function adapterMode() {
+    const mode = adapterConfig().mode || "simulated";
+    return ["simulated", "llm_shadow", "llm"].includes(mode) ? mode : "simulated";
+  }
+
+  function adapterConfig() {
+    return window.SYMPTOMMATE_AI_CONFIG || {};
+  }
+
+  function proxyEndpoint() {
+    return adapterConfig().proxyEndpoint || DEFAULT_PROXY_ENDPOINT;
+  }
+
+  function proxyTimeoutMs() {
+    const value = Number(adapterConfig().timeoutMs);
+    return Number.isFinite(value) && value > 0 ? value : 7000;
   }
 
   function detectSymptom(text, context) {
@@ -243,9 +329,10 @@
   }
 
   window.AI_ADAPTER = {
-    mode: "simulated",
-    integrationStatus: "llm_ready_not_connected",
+    mode: adapterMode(),
+    integrationStatus: shouldUseProxy() ? "llm_proxy_enabled" : "llm_ready_not_connected",
     understandInput,
+    understandInputAsync,
     getQuestionPurpose,
     estimateRisk,
     getResultReason,
