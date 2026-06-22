@@ -18,6 +18,8 @@ services:
         value: deepseek-chat
       - key: AI_MODEL_TIMEOUT_MS
         value: 15000
+      - key: PUBLIC_PROXY_BASE_URL
+        value: https://symptommate-ai-proxy.onrender.com
       - key: SYMPTOMMATE_AI_MODE
         value: llm
       - key: AI_PROXY_ALLOWED_ORIGIN

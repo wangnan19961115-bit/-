@@ -13,6 +13,7 @@ const HOST = process.env.AI_PROXY_HOST || "127.0.0.1";
 const API_MODE = process.env.OPENAI_API_MODE || "responses";
 const IS_MOCK_MODEL = API_MODE === "mock" || process.env.AI_PROXY_MOCK === "1";
 const BASE_URL = (process.env.OPENAI_BASE_URL || "https://api.openai.com/v1").replace(/\/$/, "");
+const PUBLIC_PROXY_BASE_URL = (process.env.PUBLIC_PROXY_BASE_URL || "").replace(/\/$/, "");
 const MODEL = process.env.OPENAI_MODEL || (API_MODE === "chat_completions" ? "deepseek-chat" : "gpt-5.4-mini");
 const MODEL_TIMEOUT_MS = Number(process.env.AI_MODEL_TIMEOUT_MS || 15000);
 const BETA_CODE = process.env.SYMPTOMMATE_BETA_CODE || process.env.AI_PROXY_BETA_CODE || "";
@@ -115,11 +116,11 @@ server.listen(PORT, HOST, () => {
 });
 
 function publicConfig() {
-  const listenPort = listeningPort();
+  const publicBaseUrl = PUBLIC_PROXY_BASE_URL || `http://${HOST}:${listeningPort()}`;
   return {
     mode: process.env.SYMPTOMMATE_AI_MODE || "llm",
-    proxyEndpoint: `http://${HOST}:${listenPort}/api/ai/understand`,
-    healthEndpoint: `http://${HOST}:${listenPort}/api/health`,
+    proxyEndpoint: `${publicBaseUrl}/api/ai/understand`,
+    healthEndpoint: `${publicBaseUrl}/api/health`,
     model: MODEL,
     apiMode: API_MODE,
     baseUrl: BASE_URL,

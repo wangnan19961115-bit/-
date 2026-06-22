@@ -49,6 +49,7 @@ npm start
 ```text
 AI_PROXY_HOST=0.0.0.0
 AI_PROXY_PORT=10000
+PUBLIC_PROXY_BASE_URL=https://symptommate-ai-proxy.onrender.com
 OPENAI_BASE_URL=https://api.deepseek.com
 OPENAI_API_MODE=chat_completions
 OPENAI_MODEL=deepseek-chat
