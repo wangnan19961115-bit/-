@@ -9,6 +9,8 @@ const {
 } = window.SYMPTOM_CONFIG;
 
 const aiAdapter = window.AI_ADAPTER;
+const betaConfig = window.SYMPTOMMATE_AI_CONFIG || {};
+const betaCodeStorageKey = betaConfig.betaCodeStorageKey || "symptomMateBetaCode";
 
 const state = {
   view: "home",
@@ -34,6 +36,10 @@ const state = {
     error: "",
     lastRequestId: "",
     lastFallbackReason: "",
+  },
+  betaAccess: {
+    code: readBetaCode(),
+    error: "",
   },
 };
 
@@ -63,6 +69,46 @@ function feedbackItems() {
 
 function analyticsEvents() {
   return JSON.parse(localStorage.getItem("symptomMateEvents") || "[]");
+}
+
+function readBetaCode() {
+  try {
+    return sessionStorage.getItem(betaCodeStorageKey) || "";
+  } catch (error) {
+    return "";
+  }
+}
+
+function betaAccessEnabled() {
+  return Boolean(state.betaAccess.code);
+}
+
+function saveBetaCode(code) {
+  const normalized = String(code || "").trim();
+  if (!normalized) {
+    state.betaAccess.error = "请输入试用口令";
+    render();
+    return;
+  }
+  try {
+    sessionStorage.setItem(betaCodeStorageKey, normalized);
+  } catch (error) {
+    state.betaAccess.error = "当前浏览器无法保存本次试用口令";
+    render();
+    return;
+  }
+  state.betaAccess.code = normalized;
+  state.betaAccess.error = "";
+  render();
+}
+
+function clearBetaCode() {
+  try {
+    sessionStorage.removeItem(betaCodeStorageKey);
+  } catch (error) {}
+  state.betaAccess.code = "";
+  showToast("试用口令已清除");
+  render();
 }
 
 function recordAnalyticsEvent(type, payload = {}) {
@@ -139,6 +185,34 @@ function shell(content, options = {}) {
     </main>
     ${state.consentVisible ? consentModal() : ""}
   `;
+}
+
+function betaGateView() {
+  return `
+    <main class="shell">
+      <section class="content beta-gate">
+        <div class="section panel hero-panel">
+          <div class="eyebrow">SymptomMate 小范围试用</div>
+          <h1>输入试用口令后开始自查</h1>
+          <p class="body-copy">本工具只做健康信息参考和就医准备建议，不提供诊断、治疗或处方。试用口令仅保存在当前浏览器会话中。</p>
+          <form class="beta-form" onsubmit="submitBetaAccess(event)">
+            <label class="field-label" for="betaCodeInput">试用口令</label>
+            <input id="betaCodeInput" class="text-input" type="password" autocomplete="off" placeholder="请输入口令" />
+            ${state.betaAccess.error ? `<div class="notice risk-red">${state.betaAccess.error}</div>` : ""}
+            <button class="primary-btn" type="submit">进入试用</button>
+          </form>
+        </div>
+        <div class="notice warning">如出现胸痛伴呼吸困难、意识不清、抽搐、便血/呕血、突发剧烈头痛等危险信号，请优先拨打 120 或前往急诊。</div>
+      </section>
+      ${state.toast ? `<div class="toast">${state.toast}</div>` : ""}
+    </main>
+  `;
+}
+
+function submitBetaAccess(event) {
+  event.preventDefault();
+  const input = document.querySelector("#betaCodeInput");
+  saveBetaCode(input?.value || "");
 }
 
 function tabbar() {
@@ -1034,6 +1108,7 @@ function mineView() {
       <div class="section panel">
         <h2>AI 调试</h2>
         <div class="info-grid">
+          <div class="kv"><span>试用口令</span><span>${betaAccessEnabled() ? "已输入" : "未输入"}</span></div>
           <div class="kv"><span>模式</span><span>${debug.mode}</span></div>
           <div class="kv"><span>代理</span><span>${debug.endpoint}</span></div>
           <div class="kv"><span>模型</span><span>${debug.model}</span></div>
@@ -1041,6 +1116,9 @@ function mineView() {
           <div class="kv"><span>最近请求</span><span>${debug.lastRequestId}</span></div>
           <div class="kv"><span>回退原因</span><span>${debug.lastFallbackReason}</span></div>
         </div>
+      </div>
+      <div class="section">
+        <button class="ghost-btn" style="width:100%;" onclick="clearBetaCode()">清除试用口令</button>
       </div>
       <div class="notice">云端登录、家庭成员和隐私协议将在后续版本补齐。本原型用于验证核心自查路径。</div>
     </section>
@@ -1085,7 +1163,9 @@ async function checkAiDebug() {
 }
 
 async function fetchJson(url) {
-  const response = await fetch(url, { headers: { Accept: "application/json" } });
+  const headers = { Accept: "application/json" };
+  if (state.betaAccess.code) headers["X-Beta-Code"] = state.betaAccess.code;
+  const response = await fetch(url, { headers });
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
   return response.json();
 }
@@ -1113,6 +1193,10 @@ function escapeAttr(value) {
 }
 
 function render() {
+  if (!betaAccessEnabled()) {
+    app.innerHTML = betaGateView();
+    return;
+  }
   const views = {
     home: homeView,
     chat: chatView,
@@ -1143,3 +1227,5 @@ window.openHistory = openHistory;
 window.saveHistoryFromResult = saveHistoryFromResult;
 window.clearAnalyticsData = clearAnalyticsData;
 window.checkAiDebug = checkAiDebug;
+window.submitBetaAccess = submitBetaAccess;
+window.clearBetaCode = clearBetaCode;

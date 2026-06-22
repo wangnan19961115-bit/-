@@ -8,12 +8,15 @@ const LOG_DIR = path.join(ROOT_DIR, "logs");
 const LOG_PATH = path.join(LOG_DIR, "ai-proxy.log");
 loadDotEnv();
 
-const PORT = Number(process.env.AI_PROXY_PORT || 8787);
+const PORT = Number(process.env.AI_PROXY_PORT || 8788);
 const HOST = process.env.AI_PROXY_HOST || "127.0.0.1";
 const API_MODE = process.env.OPENAI_API_MODE || "responses";
+const IS_MOCK_MODEL = API_MODE === "mock" || process.env.AI_PROXY_MOCK === "1";
 const BASE_URL = (process.env.OPENAI_BASE_URL || "https://api.openai.com/v1").replace(/\/$/, "");
 const MODEL = process.env.OPENAI_MODEL || (API_MODE === "chat_completions" ? "deepseek-chat" : "gpt-5.4-mini");
 const MODEL_TIMEOUT_MS = Number(process.env.AI_MODEL_TIMEOUT_MS || 15000);
+const BETA_CODE = process.env.SYMPTOMMATE_BETA_CODE || process.env.AI_PROXY_BETA_CODE || "";
+const ALLOWED_ORIGIN = process.env.AI_PROXY_ALLOWED_ORIGIN || "";
 const FORBIDDEN_OUTPUT_KEYS = ["diagnosis", "prescription", "medicine", "treatmentPlan"];
 
 const MIME_TYPES = {
@@ -73,6 +76,7 @@ const server = http.createServer(async (req, res) => {
         baseUrl: BASE_URL,
         modelTimeoutMs: MODEL_TIMEOUT_MS,
         hasApiKey: Boolean(process.env.OPENAI_API_KEY),
+        requiresBetaCode: Boolean(BETA_CODE),
       });
       return;
     }
@@ -100,23 +104,28 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, HOST, () => {
-  console.log(`SymptomMate AI proxy listening at http://${HOST}:${PORT}`);
+  const listenPort = listeningPort();
+  console.log(`SymptomMate AI proxy listening at http://${HOST}:${listenPort}`);
   console.log(`Model: ${MODEL}`);
   console.log(`API mode: ${API_MODE}`);
   console.log(`Base URL: ${BASE_URL}`);
-  console.log(process.env.OPENAI_API_KEY ? "OpenAI key: loaded" : "OpenAI key: missing");
+  console.log(BETA_CODE ? "Beta code: required" : "Beta code: not required");
+  console.log(IS_MOCK_MODEL ? "OpenAI key: not required in mock mode" : process.env.OPENAI_API_KEY ? "OpenAI key: loaded" : "OpenAI key: missing");
+  if (process.send) process.send({ type: "listening", host: HOST, port: listenPort });
 });
 
 function publicConfig() {
+  const listenPort = listeningPort();
   return {
     mode: process.env.SYMPTOMMATE_AI_MODE || "llm",
-    proxyEndpoint: `http://${HOST}:${PORT}/api/ai/understand`,
-    healthEndpoint: `http://${HOST}:${PORT}/api/health`,
+    proxyEndpoint: `http://${HOST}:${listenPort}/api/ai/understand`,
+    healthEndpoint: `http://${HOST}:${listenPort}/api/health`,
     model: MODEL,
     apiMode: API_MODE,
     baseUrl: BASE_URL,
     modelTimeoutMs: MODEL_TIMEOUT_MS,
     hasApiKey: Boolean(process.env.OPENAI_API_KEY),
+    requiresBetaCode: Boolean(BETA_CODE),
   };
 }
 
@@ -124,17 +133,23 @@ async function handleUnderstand(req, res) {
   const requestId = createRequestId();
   const startedAt = Date.now();
 
-  if (!process.env.OPENAI_API_KEY) {
-    logProxyEvent({ requestId, proxyStatus: "missing_api_key", startedAt });
-    sendJson(res, 500, { error: "missing_openai_api_key", requestId });
-    return;
-  }
-
   const payload = await readJsonBody(req, 64 * 1024);
   const validation = validateProxyPayload(payload);
   if (!validation.valid) {
     logProxyEvent({ requestId, proxyStatus: "invalid_payload", startedAt, validationIssues: validation.issues });
     sendJson(res, 400, { error: "invalid_payload", issues: validation.issues, requestId });
+    return;
+  }
+
+  if (!authorizedBetaRequest(req)) {
+    logProxyEvent({ requestId, proxyStatus: "unauthorized_beta", startedAt });
+    sendJson(res, 401, { error: "unauthorized_beta", requestId });
+    return;
+  }
+
+  if (!IS_MOCK_MODEL && !process.env.OPENAI_API_KEY) {
+    logProxyEvent({ requestId, proxyStatus: "missing_api_key", startedAt });
+    sendJson(res, 500, { error: "missing_openai_api_key", requestId });
     return;
   }
 
@@ -168,8 +183,28 @@ async function handleUnderstand(req, res) {
 }
 
 async function callModel(payload) {
+  if (IS_MOCK_MODEL) return callMockModel(payload);
   if (API_MODE === "chat_completions") return callChatCompletions(payload);
   return callResponses(payload);
+}
+
+async function callMockModel(payload) {
+  const userInput = String(payload.userInput || "");
+  const symptom = firstIncludedValue(userInput, payload.allowedValues.symptoms || []);
+  const redFlag = firstIncludedValue(userInput, payload.allowedValues.redFlagKeywords || []);
+
+  return {
+    symptom,
+    redFlag,
+    normalizedText: userInput.trim(),
+    extracted: {
+      duration: userInput.includes("半小时") ? "半小时" : "",
+      severity: "",
+      group: payload.currentContext?.selectedGroup || "",
+      associatedSymptoms: redFlag ? [redFlag] : [],
+    },
+    confidence: symptom || redFlag ? 0.94 : 0.21,
+  };
 }
 
 async function callResponses(payload) {
@@ -349,6 +384,10 @@ function pickAllowed(value, allowedValues) {
   return Array.isArray(allowedValues) && allowedValues.includes(text) ? text : "";
 }
 
+function firstIncludedValue(text, allowedValues) {
+  return Array.isArray(allowedValues) ? allowedValues.find((value) => text.includes(value)) || "" : "";
+}
+
 function clampConfidence(value) {
   const numberValue = Number(value);
   if (!Number.isFinite(numberValue)) return 0.3;
@@ -362,6 +401,11 @@ function hasForbiddenClinicalOutput(value) {
 
 function createRequestId() {
   return `ai_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function listeningPort() {
+  const address = server.address();
+  return address && typeof address === "object" ? address.port : PORT;
 }
 
 function logProxyEvent({ requestId, proxyStatus, startedAt, modelLatencyMs = 0, payload = {}, extraction = {}, validationIssues = [], error = "" }) {
@@ -464,9 +508,14 @@ function sendText(res, status, body) {
 }
 
 function setCorsHeaders(res) {
-  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Origin", ALLOWED_ORIGIN || "*");
   res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Accept, X-Beta-Code");
+}
+
+function authorizedBetaRequest(req) {
+  if (!BETA_CODE) return true;
+  return String(req.headers["x-beta-code"] || "") === BETA_CODE;
 }
 
 function loadDotEnv() {

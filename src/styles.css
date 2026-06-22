@@ -138,6 +138,19 @@ button {
   border-color: rgba(15, 143, 134, 0.22);
 }
 
+.beta-gate {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-height: 100vh;
+}
+
+.beta-form {
+  display: grid;
+  gap: 12px;
+  margin-top: 18px;
+}
+
 .eyebrow {
   color: var(--primary-dark);
   font-weight: 700;

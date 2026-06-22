@@ -30,6 +30,15 @@ if (-not $envMap.OPENAI_API_KEY -or $envMap.OPENAI_API_KEY -eq "sk-your-key") {
   exit 1
 }
 
+if (-not $envMap.SYMPTOMMATE_BETA_CODE -or $envMap.SYMPTOMMATE_BETA_CODE -eq "change-this-beta-code") {
+  Write-Host "SYMPTOMMATE_BETA_CODE is missing or still uses the placeholder." -ForegroundColor Yellow
+  exit 1
+}
+
+foreach ($key in $envMap.Keys) {
+  [Environment]::SetEnvironmentVariable($key, $envMap[$key], "Process")
+}
+
 $port = if ($envMap.AI_PROXY_PORT) { [int]$envMap.AI_PROXY_PORT } else { 8788 }
 $hostName = if ($envMap.AI_PROXY_HOST) { $envMap.AI_PROXY_HOST } else { "127.0.0.1" }
 $baseUrl = "http://${hostName}:${port}"

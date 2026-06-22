@@ -1,0 +1,28 @@
+services:
+  - type: web
+    name: symptommate-ai-proxy
+    env: node
+    plan: free
+    buildCommand: ""
+    startCommand: npm start
+    envVars:
+      - key: AI_PROXY_HOST
+        value: 0.0.0.0
+      - key: AI_PROXY_PORT
+        value: 10000
+      - key: OPENAI_BASE_URL
+        value: https://api.deepseek.com
+      - key: OPENAI_API_MODE
+        value: chat_completions
+      - key: OPENAI_MODEL
+        value: deepseek-chat
+      - key: AI_MODEL_TIMEOUT_MS
+        value: 15000
+      - key: SYMPTOMMATE_AI_MODE
+        value: llm
+      - key: AI_PROXY_ALLOWED_ORIGIN
+        sync: false
+      - key: SYMPTOMMATE_BETA_CODE
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false

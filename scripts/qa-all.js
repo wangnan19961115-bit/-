@@ -1,5 +1,6 @@
 const fs = require("fs");
 const vm = require("vm");
+const { spawnSync } = require("child_process");
 
 const syntaxFiles = [
   "src/app.js",
@@ -54,6 +55,12 @@ function runScript(file) {
   }
 }
 
+function runNodeFile(file) {
+  const result = spawnSync(process.execPath, [file], { stdio: "inherit" });
+  if (result.error) throw result.error;
+  if (result.status !== 0) throw new Error(`${file} exited with ${result.status}`);
+}
+
 console.log("SymptomMate Full QA");
 console.log("==================");
 
@@ -73,5 +80,8 @@ for (const file of [
   console.log(`\n> run ${file}`);
   runScript(file);
 }
+
+console.log("\n> run scripts/e2e-ai-proxy-check.js");
+runNodeFile("scripts/e2e-ai-proxy-check.js");
 
 console.log("\nAll QA checks passed.");

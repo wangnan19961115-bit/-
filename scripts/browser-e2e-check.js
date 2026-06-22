@@ -3,6 +3,7 @@ const fs = require("fs");
 
 const files = ["src/symptom-config.js", "src/medical-rules.js", "src/ai-adapter.js", "src/app.js"];
 const storage = new Map();
+const sessionStorageData = new Map([["symptomMateBetaCode", "local-e2e-beta"]]);
 const timers = [];
 
 const document = {
@@ -29,6 +30,10 @@ const windowObject = {
     healthEndpoint: "http://127.0.0.1:8788/api/health",
     configEndpoint: "http://127.0.0.1:8788/api/config",
     timeoutMs: 7000,
+    betaCodeStorageKey: "symptomMateBetaCode",
+  },
+  location: {
+    search: "?ai=shadow",
   },
   setTimeout(fn) {
     timers.push(fn);
@@ -53,6 +58,17 @@ const context = {
     },
     removeItem(key) {
       storage.delete(key);
+    },
+  },
+  sessionStorage: {
+    getItem(key) {
+      return sessionStorageData.has(key) ? sessionStorageData.get(key) : null;
+    },
+    setItem(key, value) {
+      sessionStorageData.set(key, String(value));
+    },
+    removeItem(key) {
+      sessionStorageData.delete(key);
     },
   },
   fetch,

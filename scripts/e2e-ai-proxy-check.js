@@ -1,8 +1,11 @@
 const http = require("http");
+const path = require("path");
+const { fork } = require("child_process");
 
-const port = process.env.AI_PROXY_PORT || 8788;
 const host = process.env.AI_PROXY_HOST || "127.0.0.1";
-const baseUrl = process.env.AI_PROXY_BASE_URL || `http://${host}:${port}`;
+const betaCode = process.env.SYMPTOMMATE_BETA_CODE || "local-e2e-beta";
+let baseUrl = process.env.AI_PROXY_BASE_URL || "";
+let proxyProcess = null;
 
 const basePayload = {
   schemaVersion: "symptommate.llm-extraction.v1",
@@ -40,6 +43,13 @@ const checks = [
     payload: { userInput: "胸痛" },
     assert: ({ status, body }) => status === 400 && body.error === "invalid_payload",
   },
+  {
+    id: "E2E-04",
+    name: "wrong beta code is rejected",
+    payload: { ...basePayload, userInput: "胸痛半小时，伴随呼吸困难" },
+    betaCode: "wrong-beta-code",
+    assert: ({ status, body }) => status === 401 && body.error === "unauthorized_beta",
+  },
 ];
 
 run()
@@ -56,15 +66,79 @@ run()
   });
 
 async function run() {
-  for (const check of checks) {
-    const result = await requestJson(`${baseUrl}/api/ai/understand`, check.payload);
-    if (!check.assert(result)) {
-      throw new Error(`${check.id} failed: status=${result.status} body=${JSON.stringify(result.body)}`);
+  if (!baseUrl) {
+    const started = await startMockProxy();
+    baseUrl = started.baseUrl;
+    proxyProcess = started.child;
+  }
+
+  try {
+    for (const check of checks) {
+      const result = await requestJson(`${baseUrl}/api/ai/understand`, check.payload, check.betaCode || betaCode);
+      if (!check.assert(result)) {
+        throw new Error(`${check.id} failed: status=${result.status} body=${JSON.stringify(result.body)}`);
+      }
     }
+  } finally {
+    stopMockProxy();
   }
 }
 
-function requestJson(url, body) {
+function startMockProxy() {
+  return new Promise((resolve, reject) => {
+    const script = path.join(__dirname, "ai-proxy.js");
+    const child = fork(script, {
+      cwd: path.resolve(__dirname, ".."),
+      silent: true,
+      env: {
+        ...process.env,
+        OPENAI_API_KEY: "",
+        OPENAI_API_MODE: "mock",
+        AI_PROXY_HOST: host,
+        AI_PROXY_PORT: "0",
+        SYMPTOMMATE_BETA_CODE: betaCode,
+      },
+    });
+
+    let settled = false;
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      child.kill();
+      reject(new Error("mock proxy did not start before timeout"));
+    }, 10000);
+
+    child.on("message", (message) => {
+      if (settled || message?.type !== "listening") return;
+      settled = true;
+      clearTimeout(timer);
+      resolve({
+        child,
+        baseUrl: `http://${message.host}:${message.port}`,
+      });
+    });
+
+    child.on("exit", (code) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      reject(new Error(`mock proxy exited before listening: ${code}`));
+    });
+
+    child.on("error", (error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      reject(error);
+    });
+  });
+}
+
+function stopMockProxy() {
+  if (proxyProcess && !proxyProcess.killed) proxyProcess.kill();
+}
+
+function requestJson(url, body, code = "") {
   const parsedUrl = new URL(url);
   const data = Buffer.from(JSON.stringify(body), "utf8");
   return new Promise((resolve, reject) => {
@@ -77,6 +151,7 @@ function requestJson(url, body) {
         headers: {
           "Content-Type": "application/json; charset=utf-8",
           "Content-Length": data.length,
+          ...(code ? { "X-Beta-Code": code } : {}),
         },
       },
       (res) => {

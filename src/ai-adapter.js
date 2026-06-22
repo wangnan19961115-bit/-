@@ -2,7 +2,8 @@
 // The model only extracts user-input entities. Local rules still decide risk.
 (function () {
   const LLM_SCHEMA_VERSION = "symptommate.llm-extraction.v1";
-  const DEFAULT_PROXY_ENDPOINT = "http://localhost:8787/api/ai/understand";
+  const DEFAULT_PROXY_ENDPOINT = "http://127.0.0.1:8788/api/ai/understand";
+  const DEFAULT_BETA_CODE_STORAGE_KEY = "symptomMateBetaCode";
   const ALLOWED_GROUPS = ["成年人", "儿童", "老人", "孕产妇", "有基础病"];
   const FORBIDDEN_OUTPUT_KEYS = ["diagnosis", "prescription", "medicine", "treatmentPlan"];
 
@@ -48,7 +49,7 @@
     try {
       const response = await fetch(proxyEndpoint(), {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: requestHeaders(),
         body: JSON.stringify(createLlmInputPayload(text, context)),
         signal: controller.signal,
       });
@@ -92,7 +93,7 @@
   }
 
   function adapterMode() {
-    const mode = adapterConfig().mode || "simulated";
+    const mode = grayModeOverride() || adapterConfig().mode || "simulated";
     return ["simulated", "llm_shadow", "llm"].includes(mode) ? mode : "simulated";
   }
 
@@ -102,6 +103,34 @@
 
   function proxyEndpoint() {
     return adapterConfig().proxyEndpoint || DEFAULT_PROXY_ENDPOINT;
+  }
+
+  function requestHeaders() {
+    const headers = { "Content-Type": "application/json" };
+    const betaCode = betaCodeFromSession();
+    if (betaCode) headers["X-Beta-Code"] = betaCode;
+    return headers;
+  }
+
+  function betaCodeFromSession() {
+    try {
+      const key = adapterConfig().betaCodeStorageKey || DEFAULT_BETA_CODE_STORAGE_KEY;
+      return window.sessionStorage?.getItem(key)?.trim() || "";
+    } catch (error) {
+      return "";
+    }
+  }
+
+  function grayModeOverride() {
+    try {
+      const param = adapterConfig().grayModeQueryParam || "ai";
+      const value = new URLSearchParams(window.location?.search || "").get(param);
+      if (value === "shadow") return "llm_shadow";
+      if (value === "llm") return "llm";
+      return "";
+    } catch (error) {
+      return "";
+    }
   }
 
   function proxyTimeoutMs() {

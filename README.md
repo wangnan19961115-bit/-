@@ -18,6 +18,73 @@
 node scripts/qa-all.js
 ```
 
+## 小范围试用上线
+
+第一版建议采用“GitHub Pages 前端 + Render/Railway AI 代理 + DeepSeek 灰度 AI”。普通入口默认使用本地规则版；只有带 `?ai=shadow` 或 `?ai=llm` 的链接才会调用真实 AI 代理。
+
+### 1. 部署前端到 GitHub Pages
+
+仓库已包含 `.github/workflows/pages.yml`。推送到 `main` 后，在 GitHub 仓库设置中启用 Pages，入口类似：
+
+```text
+https://<你的 GitHub 用户名>.github.io/<repo>/
+```
+
+灰度 AI 入口：
+
+```text
+https://<你的 GitHub 用户名>.github.io/<repo>/?ai=shadow
+```
+
+### 2. 部署 AI 代理到 Render/Railway
+
+推荐先用 Render Web Service 或 Railway Node Service，启动命令：
+
+```bash
+npm start
+```
+
+环境变量参考：
+
+```text
+AI_PROXY_HOST=0.0.0.0
+AI_PROXY_PORT=10000
+OPENAI_BASE_URL=https://api.deepseek.com
+OPENAI_API_MODE=chat_completions
+OPENAI_MODEL=deepseek-chat
+OPENAI_API_KEY=<你的 DeepSeek Key>
+AI_MODEL_TIMEOUT_MS=15000
+SYMPTOMMATE_AI_MODE=llm
+SYMPTOMMATE_BETA_CODE=<试用口令>
+AI_PROXY_ALLOWED_ORIGIN=https://<你的 GitHub 用户名>.github.io
+```
+
+Render 可直接参考 `render.yaml` 创建服务。`OPENAI_API_KEY` 和 `SYMPTOMMATE_BETA_CODE` 必须只放在托管平台环境变量中，不要写入仓库。
+
+### 3. 配置前端代理地址
+
+将 `src/ai-config.js` 里的 `configEndpoint`、`healthEndpoint`、`proxyEndpoint` 改成线上代理域名。默认 `mode` 保持 `"simulated"`，由 URL 参数控制灰度：
+
+- 普通链接：本地规则版。
+- `?ai=shadow`：真实 AI 影子模式，失败时继续用本地规则。
+- `?ai=llm`：真实 AI 结果直接参与理解，仅给核心测试者使用。
+
+前端会要求输入试用口令，口令只保存在当前浏览器会话的 `sessionStorage`。AI 请求会携带 `X-Beta-Code`，代理校验失败时返回 `401 unauthorized_beta`。
+
+### 4. 上线验收
+
+```powershell
+node scripts/qa-all.js
+$env:AI_PROXY_URL="https://<你的代理域名>/api/ai/understand"; node scripts/smoke-ai-proxy-live.js
+```
+
+上线后手动检查：
+
+- 普通入口可以完成本地规则自查。
+- `?ai=shadow` 输入正确试用口令后可查看 AI 接入状态。
+- 错误试用口令不能调用代理。
+- `/api/health` 不返回密钥，`logs/ai-proxy.log` 不包含用户原始输入。
+
 ## 真实 AI 后端代理
 
 本项目现在支持一个轻量 Node 后端代理。前端只调用 `/api/ai/understand`，模型密钥只放在后端环境变量里。模型输出仅用于症状、红线词等结构化抽取，红黄绿风险仍由本地规则层判断。代理支持 OpenAI Responses API，也支持 DeepSeek 等 OpenAI 兼容 Chat Completions。
