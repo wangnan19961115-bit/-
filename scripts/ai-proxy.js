@@ -83,6 +83,10 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (req.method === "GET" && url.pathname === "/api/config") {
+      if (!authorizedBetaRequest(req)) {
+        sendJson(res, 401, { error: "unauthorized_beta" });
+        return;
+      }
       sendJson(res, 200, publicConfig());
       return;
     }

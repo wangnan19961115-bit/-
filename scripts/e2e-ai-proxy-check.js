@@ -73,6 +73,11 @@ async function run() {
   }
 
   try {
+    const rejectedConfig = await requestJson(`${baseUrl}/api/config`, null, "wrong-beta-code", "GET");
+    if (rejectedConfig.status !== 401 || rejectedConfig.body?.error !== "unauthorized_beta") {
+      throw new Error(`E2E-00 failed: status=${rejectedConfig.status} body=${JSON.stringify(rejectedConfig.body)}`);
+    }
+
     for (const check of checks) {
       const result = await requestJson(`${baseUrl}/api/ai/understand`, check.payload, check.betaCode || betaCode);
       if (!check.assert(result)) {
@@ -138,16 +143,16 @@ function stopMockProxy() {
   if (proxyProcess && !proxyProcess.killed) proxyProcess.kill();
 }
 
-function requestJson(url, body, code = "") {
+function requestJson(url, body, code = "", method = "POST") {
   const parsedUrl = new URL(url);
-  const data = Buffer.from(JSON.stringify(body), "utf8");
+  const data = body ? Buffer.from(JSON.stringify(body), "utf8") : Buffer.alloc(0);
   return new Promise((resolve, reject) => {
     const req = http.request(
       {
         hostname: parsedUrl.hostname,
         port: parsedUrl.port,
         path: `${parsedUrl.pathname}${parsedUrl.search}`,
-        method: "POST",
+        method,
         headers: {
           "Content-Type": "application/json; charset=utf-8",
           "Content-Length": data.length,
@@ -171,6 +176,6 @@ function requestJson(url, body, code = "") {
     req.setTimeout(30000, () => {
       req.destroy(new Error("request timeout"));
     });
-    req.end(data);
+    req.end(data.length ? data : undefined);
   });
 }
