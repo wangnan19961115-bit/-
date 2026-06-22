@@ -32,6 +32,7 @@ check(proxy.includes("logs") && proxy.includes("ai-proxy.log"), "proxy should wr
 check(logFunction.includes("inputLength") && !logFunction.includes("userInput:"), "proxy logs should avoid raw user input");
 check(proxy.includes("process.env.AI_PROXY_PORT || 8788"), "proxy server should default to port 8788");
 check(proxy.includes('API_MODE === "mock"') && proxy.includes("callMockModel"), "proxy should support deterministic mock model mode");
+check(proxy.includes("PUBLIC_PROXY_BASE_URL"), "proxy should support an explicit public proxy base url");
 check(proxy.includes("SYMPTOMMATE_BETA_CODE") && proxy.includes("unauthorized_beta"), "proxy should protect AI calls with a beta code");
 check(proxy.includes("AI_PROXY_ALLOWED_ORIGIN") && proxy.includes("X-Beta-Code"), "proxy should support production CORS and beta code header");
 check(adapter.includes("http://127.0.0.1:8788/api/ai/understand"), "adapter fallback should use the default proxy endpoint");
