@@ -35,6 +35,8 @@ check(proxy.includes('API_MODE === "mock"') && proxy.includes("callMockModel"), 
 check(proxy.includes("PUBLIC_PROXY_BASE_URL"), "proxy should support an explicit public proxy base url");
 check(proxy.includes("SYMPTOMMATE_BETA_CODE") && proxy.includes("unauthorized_beta"), "proxy should protect AI calls with a beta code");
 check(proxy.includes("AI_PROXY_ALLOWED_ORIGIN") && proxy.includes("X-Beta-Code"), "proxy should support production CORS and beta code header");
+check(proxy.includes("AI_PROXY_RAG_ENABLED") && proxy.includes("buildRagContext"), "proxy should support a local documentation RAG path");
+check(proxy.includes("knowledgeBaseVersion") && proxy.includes("knowledgeBaseSize"), "proxy should expose RAG metadata in config");
 check(adapter.includes("http://127.0.0.1:8788/api/ai/understand"), "adapter fallback should use the default proxy endpoint");
 check(adapter.includes("X-Beta-Code") && adapter.includes("sessionStorage"), "adapter should send the beta code header from session storage");
 check(config.includes('mode: "simulated"'), "browser config should default to simulated mode for public trials");

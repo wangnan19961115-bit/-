@@ -89,6 +89,7 @@ $env:AI_PROXY_URL="https://<你的代理域名>/api/ai/understand"; node scripts
 ## 真实 AI 后端代理
 
 本项目现在支持一个轻量 Node 后端代理。前端只调用 `/api/ai/understand`，模型密钥只放在后端环境变量里。模型输出仅用于症状、红线词等结构化抽取，红黄绿风险仍由本地规则层判断。代理支持 OpenAI Responses API，也支持 DeepSeek 等 OpenAI 兼容 Chat Completions。
+如果要外挂文档 RAG，可以在代理环境里打开 `AI_PROXY_RAG_ENABLED=1`；它只检索仓库里的 Markdown 文档，不接管红线和风险分级。
 
 1. 复制 `.env.example` 为 `.env`，填入 `OPENAI_API_KEY`。
 2. 启动代理和静态服务：
