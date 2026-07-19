@@ -1,4 +1,5 @@
 const http = require("http");
+const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
 
@@ -18,9 +19,15 @@ const PUBLIC_PROXY_BASE_URL = (process.env.PUBLIC_PROXY_BASE_URL || "").replace(
 const MODEL = process.env.OPENAI_MODEL || (API_MODE === "chat_completions" ? "deepseek-chat" : "gpt-5.4-mini");
 const MODEL_TIMEOUT_MS = Number(process.env.AI_MODEL_TIMEOUT_MS || 15000);
 const BETA_CODE = process.env.SYMPTOMMATE_BETA_CODE || process.env.AI_PROXY_BETA_CODE || "";
+const BETA_CODE_SHA256 = process.env.SYMPTOMMATE_BETA_CODE_SHA256 || process.env.AI_PROXY_BETA_CODE_SHA256 || "";
 const ALLOWED_ORIGIN = process.env.AI_PROXY_ALLOWED_ORIGIN || "";
+const ALLOWED_ORIGINS = parseAllowedOrigins(ALLOWED_ORIGIN);
+const RATE_LIMIT_WINDOW_MS = Number(process.env.AI_PROXY_RATE_LIMIT_WINDOW_MS || 60000);
+const RATE_LIMIT_MAX = Number(process.env.AI_PROXY_RATE_LIMIT_MAX || 30);
+const RATE_LIMITS = new Map();
 const RAG_ENABLED = String(process.env.AI_PROXY_RAG_ENABLED || "").toLowerCase() === "1";
-const KNOWLEDGE_BASE = RAG_ENABLED ? RAG.loadKnowledgeBase(ROOT_DIR) : [];
+const KNOWLEDGE_FILES = RAG.resolveKnowledgeFiles(process.env.AI_PROXY_RAG_FILES);
+const KNOWLEDGE_BASE = RAG_ENABLED ? RAG.loadKnowledgeBase(ROOT_DIR, KNOWLEDGE_FILES) : [];
 const KNOWLEDGE_BASE_VERSION = RAG_ENABLED ? hashKnowledgeBase(KNOWLEDGE_BASE) : "";
 const FORBIDDEN_OUTPUT_KEYS = ["diagnosis", "prescription", "medicine", "treatmentPlan"];
 
@@ -64,7 +71,7 @@ const extractionSchema = {
 
 const server = http.createServer(async (req, res) => {
   try {
-    setCorsHeaders(res);
+    setCorsHeaders(req, res);
 
     if (req.method === "OPTIONS") {
       res.writeHead(204);
@@ -81,7 +88,10 @@ const server = http.createServer(async (req, res) => {
         baseUrl: BASE_URL,
         modelTimeoutMs: MODEL_TIMEOUT_MS,
         hasApiKey: Boolean(process.env.OPENAI_API_KEY),
-        requiresBetaCode: Boolean(BETA_CODE),
+        requiresBetaCode: betaCodeRequired(),
+        betaCodeMode: betaCodeMode(),
+        rateLimitWindowMs: rateLimitWindowMs(),
+        rateLimitMax: rateLimitMax(),
         ragEnabled: RAG_ENABLED,
         knowledgeBaseSize: KNOWLEDGE_BASE.length,
         knowledgeBaseVersion: KNOWLEDGE_BASE_VERSION,
@@ -121,7 +131,8 @@ server.listen(PORT, HOST, () => {
   console.log(`Model: ${MODEL}`);
   console.log(`API mode: ${API_MODE}`);
   console.log(`Base URL: ${BASE_URL}`);
-  console.log(BETA_CODE ? "Beta code: required" : "Beta code: not required");
+  console.log(betaCodeRequired() ? `Beta code: required (${betaCodeMode()})` : "Beta code: not required");
+  console.log(`Rate limit: ${rateLimitMax()} requests / ${rateLimitWindowMs()} ms`);
   console.log(IS_MOCK_MODEL ? "OpenAI key: not required in mock mode" : process.env.OPENAI_API_KEY ? "OpenAI key: loaded" : "OpenAI key: missing");
   if (process.send) process.send({ type: "listening", host: HOST, port: listenPort });
 });
@@ -137,7 +148,10 @@ function publicConfig() {
     baseUrl: BASE_URL,
     modelTimeoutMs: MODEL_TIMEOUT_MS,
     hasApiKey: Boolean(process.env.OPENAI_API_KEY),
-    requiresBetaCode: Boolean(BETA_CODE),
+    requiresBetaCode: betaCodeRequired(),
+    betaCodeMode: betaCodeMode(),
+    rateLimitWindowMs: rateLimitWindowMs(),
+    rateLimitMax: rateLimitMax(),
     ragEnabled: RAG_ENABLED,
     knowledgeBaseSize: KNOWLEDGE_BASE.length,
     knowledgeBaseVersion: KNOWLEDGE_BASE_VERSION,
@@ -148,17 +162,25 @@ async function handleUnderstand(req, res) {
   const requestId = createRequestId();
   const startedAt = Date.now();
 
+  if (!authorizedBetaRequest(req)) {
+    logProxyEvent({ requestId, proxyStatus: "unauthorized_beta", startedAt });
+    sendJson(res, 401, { error: "unauthorized_beta", requestId });
+    return;
+  }
+
+  const rateLimit = consumeRateLimit(req);
+  if (!rateLimit.allowed) {
+    res.setHeader("Retry-After", String(Math.ceil(rateLimit.retryAfterMs / 1000)));
+    logProxyEvent({ requestId, proxyStatus: "rate_limited", startedAt });
+    sendJson(res, 429, { error: "rate_limited", retryAfterMs: rateLimit.retryAfterMs, requestId });
+    return;
+  }
+
   const payload = await readJsonBody(req, 64 * 1024);
   const validation = validateProxyPayload(payload);
   if (!validation.valid) {
     logProxyEvent({ requestId, proxyStatus: "invalid_payload", startedAt, validationIssues: validation.issues });
     sendJson(res, 400, { error: "invalid_payload", issues: validation.issues, requestId });
-    return;
-  }
-
-  if (!authorizedBetaRequest(req)) {
-    logProxyEvent({ requestId, proxyStatus: "unauthorized_beta", startedAt });
-    sendJson(res, 401, { error: "unauthorized_beta", requestId });
     return;
   }
 
@@ -480,6 +502,52 @@ function writeJsonLog(event) {
   }
 }
 
+function consumeRateLimit(req) {
+  const windowMs = rateLimitWindowMs();
+  const max = rateLimitMax();
+  if (!windowMs || !max) return { allowed: true, retryAfterMs: 0 };
+
+  const now = Date.now();
+  const key = rateLimitKey(req);
+  const bucket = RATE_LIMITS.get(key);
+
+  if (!bucket || now - bucket.windowStart >= windowMs) {
+    RATE_LIMITS.set(key, { windowStart: now, count: 1 });
+    cleanupRateLimits(now, windowMs);
+    return { allowed: true, retryAfterMs: 0 };
+  }
+
+  bucket.count += 1;
+  if (bucket.count <= max) return { allowed: true, retryAfterMs: 0 };
+  return { allowed: false, retryAfterMs: Math.max(1, bucket.windowStart + windowMs - now) };
+}
+
+function cleanupRateLimits(now, windowMs) {
+  if (RATE_LIMITS.size < 1000) return;
+  for (const [key, bucket] of RATE_LIMITS.entries()) {
+    if (now - bucket.windowStart >= windowMs) RATE_LIMITS.delete(key);
+  }
+}
+
+function rateLimitKey(req) {
+  const forwarded = String(req.headers["x-forwarded-for"] || "").split(",")[0].trim();
+  const ip = forwarded || req.socket?.remoteAddress || "unknown";
+  const betaFingerprint = req.headers["x-beta-code"] ? sha256Hex(req.headers["x-beta-code"]).slice(0, 12) : "no-beta";
+  return `${ip}:${betaFingerprint}`;
+}
+
+function rateLimitWindowMs() {
+  return positiveInteger(RATE_LIMIT_WINDOW_MS, 60000);
+}
+
+function rateLimitMax() {
+  return positiveInteger(RATE_LIMIT_MAX, 30);
+}
+
+function positiveInteger(value, fallback) {
+  return Number.isFinite(value) && value > 0 ? Math.floor(value) : fallback;
+}
+
 function validateProxyPayload(payload) {
   const issues = [];
   if (!payload || typeof payload !== "object") issues.push("payload must be an object");
@@ -550,15 +618,64 @@ function sendText(res, status, body) {
   res.end(body);
 }
 
-function setCorsHeaders(res) {
-  res.setHeader("Access-Control-Allow-Origin", ALLOWED_ORIGIN || "*");
+function setCorsHeaders(req, res) {
+  const origin = String(req.headers.origin || "");
+  const allowedOrigin = allowedCorsOrigin(origin);
+  if (allowedOrigin) {
+    res.setHeader("Access-Control-Allow-Origin", allowedOrigin);
+    res.setHeader("Vary", "Origin");
+  } else if (!ALLOWED_ORIGINS.length) {
+    res.setHeader("Access-Control-Allow-Origin", "*");
+  }
   res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, Accept, X-Beta-Code");
+  res.setHeader("Access-Control-Max-Age", "600");
 }
 
 function authorizedBetaRequest(req) {
-  if (!BETA_CODE) return true;
-  return String(req.headers["x-beta-code"] || "") === BETA_CODE;
+  if (!betaCodeRequired()) return true;
+  const provided = String(req.headers["x-beta-code"] || "");
+  if (!provided) return false;
+  if (BETA_CODE && timingSafeEqualString(provided, BETA_CODE)) return true;
+  if (BETA_CODE_SHA256 && timingSafeEqualString(sha256Hex(provided), normalizeHash(BETA_CODE_SHA256))) return true;
+  return false;
+}
+
+function betaCodeRequired() {
+  return Boolean(BETA_CODE || BETA_CODE_SHA256);
+}
+
+function betaCodeMode() {
+  if (BETA_CODE_SHA256) return BETA_CODE ? "sha256_or_plain" : "sha256";
+  return BETA_CODE ? "plain" : "off";
+}
+
+function timingSafeEqualString(left, right) {
+  const leftBuffer = Buffer.from(String(left));
+  const rightBuffer = Buffer.from(String(right));
+  if (leftBuffer.length !== rightBuffer.length) return false;
+  return crypto.timingSafeEqual(leftBuffer, rightBuffer);
+}
+
+function sha256Hex(value) {
+  return crypto.createHash("sha256").update(String(value)).digest("hex");
+}
+
+function normalizeHash(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function parseAllowedOrigins(value) {
+  return String(value || "")
+    .split(/[,\s]+/)
+    .map((item) => item.trim().replace(/\/$/, ""))
+    .filter(Boolean);
+}
+
+function allowedCorsOrigin(origin) {
+  if (!origin) return "";
+  const normalized = origin.replace(/\/$/, "");
+  return ALLOWED_ORIGINS.includes(normalized) ? normalized : "";
 }
 
 function loadDotEnv() {

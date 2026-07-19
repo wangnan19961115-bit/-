@@ -168,3 +168,23 @@ node scripts/qa-ai-proxy-check.js
 当前验收记录见 `docs/qa/QA_TEST_MATRIX.md`，最终 QA 汇总见 `docs/reports/QA_FINAL_REPORT.md`。
 
 AI 代理运行手册见 `docs/guides/AI_PROXY_RUNBOOK.md`。
+
+## 落地增强项
+
+- 公开说明页：`privacy.html` 说明隐私、日志脱敏和敏感个人信息边界；`terms.html` 说明使用条款、医疗免责声明和 120 急症优先原则。
+- 代理防刷：生产环境建议配置 `AI_PROXY_RATE_LIMIT_WINDOW_MS=60000` 和 `AI_PROXY_RATE_LIMIT_MAX=30`。超过限制时代理返回 `429 rate_limited`，不会继续调用真实模型。
+- 试用口令：小范围试用可继续使用 `SYMPTOMMATE_BETA_CODE`；生产环境更推荐只配置 `SYMPTOMMATE_BETA_CODE_SHA256`，避免明文口令出现在托管平台环境变量列表中。
+- RAG 外挂：设置 `AI_PROXY_RAG_ENABLED=1` 后，可用 `AI_PROXY_RAG_FILES` 指定仓库内 Markdown 文件。详细维护规范见 `docs/guides/RAG_KNOWLEDGE_GUIDE.md`。
+- 医疗安全测试：红旗、模糊输入和禁止输出边界见 `docs/qa/MEDICAL_SAFETY_TESTS.md`，自动检查脚本为 `scripts/qa-medical-safety-check.js`。
+
+生成试用口令 SHA-256 的本地命令示例：
+
+```powershell
+node -e "const crypto=require('crypto'); const code=process.argv[1]; console.log(crypto.createHash('sha256').update(code).digest('hex'))" "your-beta-code"
+```
+
+上线前固定跑：
+
+```powershell
+node scripts/qa-all.js
+```

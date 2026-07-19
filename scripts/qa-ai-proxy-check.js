@@ -34,8 +34,11 @@ check(proxy.includes("process.env.AI_PROXY_PORT || 8788"), "proxy server should 
 check(proxy.includes('API_MODE === "mock"') && proxy.includes("callMockModel"), "proxy should support deterministic mock model mode");
 check(proxy.includes("PUBLIC_PROXY_BASE_URL"), "proxy should support an explicit public proxy base url");
 check(proxy.includes("SYMPTOMMATE_BETA_CODE") && proxy.includes("unauthorized_beta"), "proxy should protect AI calls with a beta code");
+check(proxy.includes("SYMPTOMMATE_BETA_CODE_SHA256") && proxy.includes("timingSafeEqual"), "proxy should support hashed beta codes with safe comparison");
+check(proxy.includes("AI_PROXY_RATE_LIMIT_MAX") && proxy.includes("rate_limited"), "proxy should rate limit AI calls");
 check(proxy.includes("AI_PROXY_ALLOWED_ORIGIN") && proxy.includes("X-Beta-Code"), "proxy should support production CORS and beta code header");
 check(proxy.includes("AI_PROXY_RAG_ENABLED") && proxy.includes("buildRagContext"), "proxy should support a local documentation RAG path");
+check(proxy.includes("AI_PROXY_RAG_FILES") && proxy.includes("resolveKnowledgeFiles"), "proxy should support injectable local RAG markdown files");
 check(proxy.includes("knowledgeBaseVersion") && proxy.includes("knowledgeBaseSize"), "proxy should expose RAG metadata in config");
 check(adapter.includes("http://127.0.0.1:8788/api/ai/understand"), "adapter fallback should use the default proxy endpoint");
 check(adapter.includes("X-Beta-Code") && adapter.includes("sessionStorage"), "adapter should send the beta code header from session storage");
@@ -44,9 +47,12 @@ check(config.includes("grayModeQueryParam") && adapter.includes("URLSearchParams
 check(config.includes("https://symptommate-ai-proxy.onrender.com"), "browser config should point production endpoints at the hosted proxy placeholder");
 check(envExample.includes("AI_PROXY_PORT=8788"), ".env.example should document the default proxy port");
 check(envExample.includes("SYMPTOMMATE_BETA_CODE") && envExample.includes("AI_PROXY_ALLOWED_ORIGIN"), ".env.example should document trial access and CORS variables");
+check(envExample.includes("SYMPTOMMATE_BETA_CODE_SHA256") && envExample.includes("AI_PROXY_RATE_LIMIT_MAX"), ".env.example should document hashed beta code and rate limiting");
 check(readme.includes("http://127.0.0.1:8788"), "README should document the default proxy browser endpoint");
 check(e2e.includes('OPENAI_API_MODE: "mock"'), "AI proxy E2E should run against mock mode");
 check(e2e.includes("wrong beta code is rejected"), "AI proxy E2E should verify bad beta code rejection");
+check(e2e.includes("SYMPTOMMATE_BETA_CODE_SHA256"), "AI proxy E2E should verify hashed beta code mode");
+check(e2e.includes("rate_limited"), "AI proxy E2E should verify deterministic rate limiting");
 check(renderConfig.includes("symptommate-ai-proxy") && renderConfig.includes("OPENAI_API_KEY"), "Render config should define the proxy service and required secrets");
 check(app.includes("aiStatusMeta"), "app should render visible AI status");
 check(app.includes("AI 暂不可用，已回退本地规则"), "app should show fallback feedback");

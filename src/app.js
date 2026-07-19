@@ -203,6 +203,10 @@ function betaGateView() {
           </form>
         </div>
         <div class="notice warning">如出现胸痛伴呼吸困难、意识不清、抽搐、便血/呕血、突发剧烈头痛等危险信号，请优先拨打 120 或前往急诊。</div>
+        <div class="legal-links">
+          <a href="./privacy.html" target="_blank" rel="noopener">隐私政策</a>
+          <a href="./terms.html" target="_blank" rel="noopener">使用条款与医疗免责声明</a>
+        </div>
       </section>
       ${state.toast ? `<div class="toast">${state.toast}</div>` : ""}
     </main>
@@ -1103,6 +1107,8 @@ function mineView() {
         <button class="menu-item" onclick="checkAiDebug()"><span>AI 接入状态</span><span class="tag">${debug.status}</span></button>
         <button class="menu-item" onclick="showToast('即将支持为家人自查')"><span>家庭成员</span><span class="tag">即将上线</span></button>
         <button class="menu-item" onclick="showToast('设置能力将在云端版接入')"><span>设置</span>${icon.arrow}</button>
+        <a class="menu-item" href="./privacy.html" target="_blank" rel="noopener"><span>隐私政策</span>${icon.arrow}</a>
+        <a class="menu-item" href="./terms.html" target="_blank" rel="noopener"><span>使用条款与医疗免责声明</span>${icon.arrow}</a>
         <button class="menu-item" onclick="showToast('SymptomMate MVP 原型 v1.0')"><span>关于我们</span>${icon.arrow}</button>
       </div>
       <div class="section panel">

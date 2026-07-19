@@ -1,4 +1,5 @@
 const http = require("http");
+const crypto = require("crypto");
 const path = require("path");
 const { fork } = require("child_process");
 
@@ -50,6 +51,12 @@ const checks = [
     betaCode: "wrong-beta-code",
     assert: ({ status, body }) => status === 401 && body.error === "unauthorized_beta",
   },
+  {
+    id: "E2E-05",
+    name: "valid beta traffic is rate limited",
+    payload: { ...basePayload, userInput: "胸痛半小时，伴随呼吸困难" },
+    assert: ({ status, body }) => status === 429 && body.error === "rate_limited",
+  },
 ];
 
 run()
@@ -77,12 +84,24 @@ async function run() {
     if (rejectedConfig.status !== 401 || rejectedConfig.body?.error !== "unauthorized_beta") {
       throw new Error(`E2E-00 failed: status=${rejectedConfig.status} body=${JSON.stringify(rejectedConfig.body)}`);
     }
+    const acceptedConfig = await requestJson(`${baseUrl}/api/config`, null, betaCode, "GET");
+    if (acceptedConfig.status !== 200 || !String(acceptedConfig.body?.betaCodeMode || "").includes("sha256")) {
+      throw new Error(`E2E-00B failed: status=${acceptedConfig.status} body=${JSON.stringify(acceptedConfig.body)}`);
+    }
 
-    for (const check of checks) {
+    for (const check of checks.filter((item) => item.id !== "E2E-05")) {
       const result = await requestJson(`${baseUrl}/api/ai/understand`, check.payload, check.betaCode || betaCode);
       if (!check.assert(result)) {
         throw new Error(`${check.id} failed: status=${result.status} body=${JSON.stringify(result.body)}`);
       }
+    }
+
+    const rateLimitCheck = checks.find((item) => item.id === "E2E-05");
+    await requestJson(`${baseUrl}/api/ai/understand`, rateLimitCheck.payload, betaCode);
+    await requestJson(`${baseUrl}/api/ai/understand`, rateLimitCheck.payload, betaCode);
+    const limited = await requestJson(`${baseUrl}/api/ai/understand`, rateLimitCheck.payload, betaCode);
+    if (!rateLimitCheck.assert(limited)) {
+      throw new Error(`${rateLimitCheck.id} failed: status=${limited.status} body=${JSON.stringify(limited.body)}`);
     }
   } finally {
     stopMockProxy();
@@ -101,7 +120,10 @@ function startMockProxy() {
         OPENAI_API_MODE: "mock",
         AI_PROXY_HOST: host,
         AI_PROXY_PORT: "0",
-        SYMPTOMMATE_BETA_CODE: betaCode,
+        SYMPTOMMATE_BETA_CODE: "",
+        SYMPTOMMATE_BETA_CODE_SHA256: sha256Hex(betaCode),
+        AI_PROXY_RATE_LIMIT_MAX: "5",
+        AI_PROXY_RATE_LIMIT_WINDOW_MS: "60000",
       },
     });
 
@@ -137,6 +159,10 @@ function startMockProxy() {
       reject(error);
     });
   });
+}
+
+function sha256Hex(value) {
+  return crypto.createHash("sha256").update(String(value)).digest("hex");
 }
 
 function stopMockProxy() {

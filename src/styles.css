@@ -973,6 +973,40 @@ h3 {
   border-radius: var(--radius);
   color: var(--text);
   text-align: left;
+  text-decoration: none;
+}
+
+.menu-item svg {
+  width: 20px;
+  height: 20px;
+  flex: 0 0 20px;
+}
+
+.legal-links {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px 16px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.legal-links a {
+  color: var(--primary-dark);
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.legal-links a:hover {
+  text-decoration: underline;
+}
+
+.legal-page .content {
+  padding-bottom: 28px;
+}
+
+.legal-page .panel {
+  box-shadow: none;
 }
 
 .toast {

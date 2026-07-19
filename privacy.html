@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SymptomMate 隐私政策与试用说明</title>
+    <link rel="stylesheet" href="./src/styles.css?v=20260719" />
+  </head>
+  <body>
+    <main class="shell legal-page">
+      <section class="content">
+        <div class="section panel hero-panel">
+          <div class="eyebrow">SymptomMate 小范围试用</div>
+          <h1>隐私政策与试用说明</h1>
+          <p class="body-copy">最后更新：2026-07-19。本页面说明试用版如何处理症状自查信息、AI 代理请求和本地历史记录。</p>
+        </div>
+
+        <div class="section panel">
+          <h2>我们如何定位这个工具</h2>
+          <p class="body-copy">SymptomMate 只提供健康信息参考、就医准备和风险提醒，不提供诊断、治疗方案、处方或药物剂量建议。遇到胸痛伴呼吸困难、意识不清、抽搐、严重出血、突发剧烈头痛等危险信号，请优先拨打 120 或前往急诊。</p>
+        </div>
+
+        <div class="section panel">
+          <h2>本地保存</h2>
+          <p class="body-copy">试用口令只保存在当前浏览器会话的 sessionStorage 中。自查历史、反馈和本地看板数据只保存在你的浏览器 localStorage 中，不会自动上传到服务器。</p>
+        </div>
+
+        <div class="section panel">
+          <h2>AI 代理请求</h2>
+          <p class="body-copy">当你使用带有 ?ai=shadow 或 ?ai=llm 的灰度入口时，前端会把本次输入发送到 AI 代理，用于抽取症状、红旗词和持续时间等结构化信息。代理只把 API Key 放在服务端环境变量中，前端不会保存或展示模型密钥。</p>
+        </div>
+
+        <div class="section panel">
+          <h2>日志与脱敏</h2>
+          <p class="body-copy">AI 代理日志不记录用户原始输入，不记录试用口令，不记录 API Key。日志仅保留 requestId、状态、耗时、输入长度、抽取到的症状或红旗词、校验问题等运行信息，用于排查故障和控制费用。</p>
+        </div>
+
+        <div class="section panel">
+          <h2>敏感个人信息</h2>
+          <p class="body-copy">症状、病史和健康状态可能属于敏感个人信息。请不要输入姓名、身份证号、电话、住址、医保号、精确定位、支付信息或无关的个人隐私。试用版不面向未成年人单独使用。</p>
+        </div>
+
+        <div class="section legal-links">
+          <a href="./index.html">返回试用入口</a>
+          <a href="./terms.html">使用条款与医疗免责声明</a>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>

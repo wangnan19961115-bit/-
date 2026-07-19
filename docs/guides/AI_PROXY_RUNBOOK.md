@@ -126,3 +126,19 @@ node scripts\qa-secret-check.js
 - 模型只做结构化抽取，不做诊断、处方、治疗方案或风险分级。
 - 模型失败不能阻断主流程，必须回退本地规则。
 - 建议增加速率限制、日志留存策略和告警。
+
+## 生产增强配置
+
+建议上线试用时补齐这些变量：
+
+```text
+AI_PROXY_RATE_LIMIT_WINDOW_MS=60000
+AI_PROXY_RATE_LIMIT_MAX=30
+SYMPTOMMATE_BETA_CODE_SHA256=<试用口令的 SHA-256>
+AI_PROXY_RAG_ENABLED=0
+AI_PROXY_RAG_FILES=README.md,docs/guides/AI_PROXY_RUNBOOK.md,docs/guides/RAG_KNOWLEDGE_GUIDE.md,docs/qa/MEDICAL_SAFETY_TESTS.md
+```
+
+口令可以继续用 `SYMPTOMMATE_BETA_CODE` 明文配置，但生产环境更推荐只放 `SYMPTOMMATE_BETA_CODE_SHA256`。代理会用安全比较校验 `X-Beta-Code`，不会把口令写入日志。
+
+如果启用 RAG，只允许放仓库内经过人工审核的 Markdown 文件。不要把 `.env`、日志、用户原始输入或未确认来源的医学内容加入 `AI_PROXY_RAG_FILES`。

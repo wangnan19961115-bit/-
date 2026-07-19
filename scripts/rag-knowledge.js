@@ -5,6 +5,7 @@ const DEFAULT_KNOWLEDGE_FILES = [
   "README.md",
   "docs/guides/AI_ADAPTER_GUIDE.md",
   "docs/guides/AI_PROXY_RUNBOOK.md",
+  "docs/guides/RAG_KNOWLEDGE_GUIDE.md",
   "docs/guides/MEDICAL_RULES_GUIDE.md",
   "docs/guides/SYMPTOM_CONFIG_GUIDE.md",
   "docs/reports/AI_INTEGRATION_PLAN.md",
@@ -14,17 +15,41 @@ const DEFAULT_KNOWLEDGE_FILES = [
   "docs/reports/QA_REPORT.md",
   "docs/reports/MEDICAL_RULES_REPORT.md",
   "docs/qa/QA_TEST_MATRIX.md",
+  "docs/qa/MEDICAL_SAFETY_TESTS.md",
 ];
 
 function loadKnowledgeBase(rootDir, fileList = DEFAULT_KNOWLEDGE_FILES) {
   const chunks = [];
   for (const relativePath of fileList) {
-    const filePath = path.join(rootDir, relativePath);
+    const filePath = resolveMarkdownFile(rootDir, relativePath);
+    if (!filePath) continue;
     if (!fs.existsSync(filePath)) continue;
     const text = fs.readFileSync(filePath, "utf8");
-    chunks.push(...chunkMarkdown(text, relativePath));
+    chunks.push(...chunkMarkdown(text, normalizeSourcePath(rootDir, filePath)));
   }
   return chunks;
+}
+
+function resolveKnowledgeFiles(value) {
+  if (!value) return DEFAULT_KNOWLEDGE_FILES;
+  return String(value)
+    .split(/[,\n;]/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function resolveMarkdownFile(rootDir, relativePath) {
+  const normalized = String(relativePath || "").replace(/\\/g, "/").replace(/^\/+/, "");
+  if (!/\.md$/i.test(normalized)) return null;
+  const filePath = path.resolve(rootDir, normalized);
+  const rootPath = path.resolve(rootDir);
+  const relative = path.relative(rootPath, filePath);
+  if (relative.startsWith("..") || path.isAbsolute(relative)) return null;
+  return filePath;
+}
+
+function normalizeSourcePath(rootDir, filePath) {
+  return path.relative(rootDir, filePath).replace(/\\/g, "/");
 }
 
 function chunkMarkdown(text, source) {
@@ -120,6 +145,7 @@ function formatKnowledgeContext(items) {
 
 module.exports = {
   DEFAULT_KNOWLEDGE_FILES,
+  resolveKnowledgeFiles,
   loadKnowledgeBase,
   retrieveKnowledge,
   formatKnowledgeContext,

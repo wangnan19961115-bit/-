@@ -18,6 +18,14 @@ services:
         value: deepseek-chat
       - key: AI_MODEL_TIMEOUT_MS
         value: 15000
+      - key: AI_PROXY_RATE_LIMIT_WINDOW_MS
+        value: 60000
+      - key: AI_PROXY_RATE_LIMIT_MAX
+        value: 30
+      - key: AI_PROXY_RAG_ENABLED
+        value: 0
+      - key: AI_PROXY_RAG_FILES
+        value: README.md,docs/guides/AI_PROXY_RUNBOOK.md,docs/guides/RAG_KNOWLEDGE_GUIDE.md,docs/guides/MEDICAL_RULES_GUIDE.md,docs/guides/SYMPTOM_CONFIG_GUIDE.md,docs/qa/QA_TEST_MATRIX.md,docs/qa/MEDICAL_SAFETY_TESTS.md
       - key: PUBLIC_PROXY_BASE_URL
         value: https://symptommate-ai-proxy.onrender.com
       - key: SYMPTOMMATE_AI_MODE
@@ -25,6 +33,8 @@ services:
       - key: AI_PROXY_ALLOWED_ORIGIN
         sync: false
       - key: SYMPTOMMATE_BETA_CODE
+        sync: false
+      - key: SYMPTOMMATE_BETA_CODE_SHA256
         sync: false
       - key: OPENAI_API_KEY
         sync: false
