@@ -14,6 +14,7 @@ const syntaxFiles = [
   "scripts/qa-ai-proxy-check.js",
   "scripts/qa-rag-check.js",
   "scripts/qa-medical-safety-check.js",
+  "scripts/qa-feedback-check.js",
   "scripts/qa-production-readiness-check.js",
   "scripts/qa-secret-check.js",
   "scripts/smoke-ai-proxy-live.js",
@@ -80,6 +81,7 @@ for (const file of [
   "scripts/qa-ai-proxy-check.js",
   "scripts/qa-rag-check.js",
   "scripts/qa-medical-safety-check.js",
+  "scripts/qa-feedback-check.js",
   "scripts/qa-production-readiness-check.js",
   "scripts/qa-secret-check.js",
 ]) {

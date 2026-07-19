@@ -1296,6 +1296,7 @@ window.showToast = showToast;
 window.clearHistory = clearHistory;
 window.openHistory = openHistory;
 window.saveHistoryFromResult = saveHistoryFromResult;
+window.recordFeedback = recordFeedback;
 window.clearAnalyticsData = clearAnalyticsData;
 window.checkAiDebug = checkAiDebug;
 window.submitBetaAccess = submitBetaAccess;
