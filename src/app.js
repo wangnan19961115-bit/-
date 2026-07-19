@@ -11,6 +11,7 @@ const {
 const aiAdapter = window.AI_ADAPTER;
 const betaConfig = window.SYMPTOMMATE_AI_CONFIG || {};
 const betaCodeStorageKey = betaConfig.betaCodeStorageKey || "symptomMateBetaCode";
+const initialBetaCode = readBetaCode();
 
 const state = {
   view: "home",
@@ -38,7 +39,9 @@ const state = {
     lastFallbackReason: "",
   },
   betaAccess: {
-    code: readBetaCode(),
+    code: "",
+    pendingCode: initialBetaCode,
+    verifying: false,
     error: "",
   },
 };
@@ -80,16 +83,35 @@ function readBetaCode() {
 }
 
 function betaAccessEnabled() {
-  return Boolean(state.betaAccess.code);
+  return Boolean(state.betaAccess.code && !state.betaAccess.verifying);
 }
 
-function saveBetaCode(code) {
+async function saveBetaCode(code) {
   const normalized = String(code || "").trim();
   if (!normalized) {
     state.betaAccess.error = "请输入试用口令";
+    state.betaAccess.code = "";
+    state.betaAccess.pendingCode = "";
     render();
     return;
   }
+
+  state.betaAccess.error = "";
+  state.betaAccess.verifying = true;
+  state.betaAccess.pendingCode = normalized;
+  render();
+
+  const verified = await verifyBetaCode(normalized);
+  state.betaAccess.verifying = false;
+  if (!verified.ok) {
+    clearStoredBetaCode();
+    state.betaAccess.code = "";
+    state.betaAccess.pendingCode = "";
+    state.betaAccess.error = verified.reason === "unauthorized" ? "试用口令不正确，请重新输入" : "暂时无法验证试用口令，请稍后再试";
+    render();
+    return;
+  }
+
   try {
     sessionStorage.setItem(betaCodeStorageKey, normalized);
   } catch (error) {
@@ -98,17 +120,23 @@ function saveBetaCode(code) {
     return;
   }
   state.betaAccess.code = normalized;
+  state.betaAccess.pendingCode = "";
   state.betaAccess.error = "";
   render();
 }
 
 function clearBetaCode() {
+  clearStoredBetaCode();
+  state.betaAccess.code = "";
+  state.betaAccess.pendingCode = "";
+  showToast("试用口令已清除");
+  render();
+}
+
+function clearStoredBetaCode() {
   try {
     sessionStorage.removeItem(betaCodeStorageKey);
   } catch (error) {}
-  state.betaAccess.code = "";
-  showToast("试用口令已清除");
-  render();
 }
 
 function recordAnalyticsEvent(type, payload = {}) {
@@ -188,6 +216,7 @@ function shell(content, options = {}) {
 }
 
 function betaGateView() {
+  const betaValue = state.betaAccess.pendingCode || "";
   return `
     <main class="shell">
       <section class="content beta-gate">
@@ -197,9 +226,9 @@ function betaGateView() {
           <p class="body-copy">本工具只做健康信息参考和就医准备建议，不提供诊断、治疗或处方。试用口令仅保存在当前浏览器会话中。</p>
           <form class="beta-form" onsubmit="submitBetaAccess(event)">
             <label class="field-label" for="betaCodeInput">试用口令</label>
-            <input id="betaCodeInput" class="text-input" type="password" autocomplete="off" placeholder="请输入口令" />
+            <input id="betaCodeInput" class="text-input" type="password" autocomplete="off" placeholder="请输入口令" value="${escapeAttr(betaValue)}" ${state.betaAccess.verifying ? "disabled" : ""} />
             ${state.betaAccess.error ? `<div class="notice risk-red">${state.betaAccess.error}</div>` : ""}
-            <button class="primary-btn" type="submit">进入试用</button>
+            <button class="primary-btn" type="submit" ${state.betaAccess.verifying ? "disabled" : ""}>${state.betaAccess.verifying ? "正在验证..." : "进入试用"}</button>
           </form>
         </div>
         <div class="notice warning">如出现胸痛伴呼吸困难、意识不清、抽搐、便血/呕血、突发剧烈头痛等危险信号，请优先拨打 120 或前往急诊。</div>
@@ -215,6 +244,7 @@ function betaGateView() {
 
 function submitBetaAccess(event) {
   event.preventDefault();
+  if (state.betaAccess.verifying) return;
   const input = document.querySelector("#betaCodeInput");
   saveBetaCode(input?.value || "");
 }
@@ -1176,6 +1206,24 @@ async function fetchJson(url) {
   return response.json();
 }
 
+async function verifyBetaCode(code) {
+  const config = window.SYMPTOMMATE_AI_CONFIG || {};
+  if (!config.configEndpoint) return { ok: false, reason: "unavailable" };
+  try {
+    const response = await fetch(config.configEndpoint, {
+      headers: {
+        Accept: "application/json",
+        "X-Beta-Code": code,
+      },
+    });
+    if (response.ok) return { ok: true };
+    if (response.status === 401) return { ok: false, reason: "unauthorized" };
+    return { ok: false, reason: "unavailable" };
+  } catch (error) {
+    return { ok: false, reason: "unavailable" };
+  }
+}
+
 function labelForAnswer(key) {
   const map = {
     duration: "持续时间",
@@ -1195,7 +1243,11 @@ function confidenceColor(value) {
 }
 
 function escapeAttr(value) {
-  return value.replaceAll("'", "\\'");
+  return String(value || "")
+    .replaceAll("&", "&amp;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;");
 }
 
 function render() {
@@ -1219,6 +1271,7 @@ function render() {
 }
 
 render();
+if (initialBetaCode) saveBetaCode(initialBetaCode);
 
 window.state = state;
 window.setView = setView;

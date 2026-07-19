@@ -32,7 +32,11 @@ check(files.terms.includes("不是医疗诊断"), "terms page should include med
 check(files.terms.includes("不提供处方"), "terms page should reject prescriptions and treatment plans");
 check(files.terms.includes("AI 灰度"), "terms page should explain AI gray mode");
 check(files.app.includes("privacy.html") && files.app.includes("terms.html"), "app should link privacy and terms pages");
-check(files.index.includes("v=20260719"), "index should bump static asset cache version after landing changes");
+check(files.index.includes("v=20260719-2"), "index should bump static asset cache version after beta-gate changes");
+check(files.app.includes("async function saveBetaCode") && files.app.includes("await verifyBetaCode"), "beta gate should verify the code before entering");
+check(files.app.includes("config.configEndpoint") && files.app.includes('"X-Beta-Code": code'), "beta gate should validate against the backend config endpoint");
+check(files.app.indexOf("await verifyBetaCode") < files.app.indexOf("sessionStorage.setItem"), "beta code should not be stored before backend verification");
+check(files.app.includes("试用口令不正确"), "beta gate should show a wrong-code error");
 
 check(files.proxy.includes("SYMPTOMMATE_BETA_CODE_SHA256"), "proxy should support hashed beta code");
 check(files.proxy.includes("timingSafeEqual"), "proxy should compare beta code safely");
