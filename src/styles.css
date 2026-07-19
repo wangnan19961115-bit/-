@@ -610,6 +610,11 @@ h3 {
   gap: 8px;
 }
 
+.feedback-section {
+  display: grid;
+  gap: 12px;
+}
+
 .feedback-btn {
   min-height: 42px;
   border-radius: var(--radius);
@@ -624,6 +629,37 @@ h3 {
 .feedback-btn:hover {
   border-color: var(--primary);
   color: var(--primary-dark);
+}
+
+.feedback-reasons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.reason-chip {
+  min-height: 34px;
+  border-radius: 999px;
+  padding: 0 12px;
+  background: var(--surface-soft);
+  border: 1px solid var(--line);
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.reason-chip:hover {
+  border-color: var(--primary);
+  color: var(--primary-dark);
+}
+
+.feedback-copy-btn {
+  width: 100%;
+}
+
+.feedback-note {
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .info-grid {

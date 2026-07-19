@@ -696,10 +696,20 @@ function resultView() {
         <ul class="list alert-list">${escalation.map((item) => `<li>${item}</li>`).join("")}</ul>
       </div>
 
-      <div class="section feedback-panel">
-        <button class="feedback-btn" onclick="recordFeedback('understood')">我看懂了</button>
-        <button class="feedback-btn" onclick="recordFeedback('uncertain')">仍然不确定</button>
-        <button class="feedback-btn" onclick="recordFeedback('mismatch')">建议不符合</button>
+      <div class="section panel feedback-section">
+        <h2>这次结果有帮助吗</h2>
+        <div class="feedback-panel">
+          <button class="feedback-btn" onclick="recordFeedback('understood')">我看懂了</button>
+          <button class="feedback-btn" onclick="recordFeedback('uncertain')">仍然不确定</button>
+          <button class="feedback-btn" onclick="recordFeedback('mismatch')">建议不符合</button>
+        </div>
+        <div class="feedback-reasons">
+          ${feedbackReasons()
+            .map((item) => `<button class="reason-chip" onclick="recordFeedback('detail','${item.id}')">${item.label}</button>`)
+            .join("")}
+        </div>
+        <button class="secondary-btn feedback-copy-btn" onclick="copyFeedbackSummary()">复制脱敏反馈</button>
+        <p class="muted feedback-note">反馈摘要不包含你的原始输入，可粘贴给试用负责人。</p>
       </div>
 
       <div class="section action-grid">
@@ -734,24 +744,89 @@ function recordFeedback(type) {
     understood: "我看懂了",
     uncertain: "仍然不确定",
     mismatch: "建议不符合情况",
+    detail: "补充原因",
   };
+  const reason = arguments.length > 1 ? feedbackReasonById(arguments[1]) : null;
+  const summary = createFeedbackSummary(type, reason?.id || "");
   const events = JSON.parse(localStorage.getItem("symptomMateFeedback") || "[]");
   events.unshift({
     type,
     label: labels[type],
+    reasonId: reason?.id || "",
+    reasonLabel: reason?.label || "",
     symptom: state.result?.symptom || "",
     risk: state.result?.risk || "",
     resultId: state.result?.id || "",
+    summary,
     timestamp: new Date().toISOString(),
   });
   localStorage.setItem("symptomMateFeedback", JSON.stringify(events.slice(0, 100)));
   recordAnalyticsEvent("feedback", {
     feedbackType: type,
+    feedbackReason: reason?.id || "",
     symptom: state.result?.symptom || "",
     risk: state.result?.risk || "",
     resultId: state.result?.id || "",
   });
-  showToast(`已记录：${labels[type]}`);
+  showToast(reason ? `已记录：${reason.label}` : `已记录：${labels[type]}`);
+}
+
+function feedbackReasons() {
+  return [
+    { id: "hard_to_understand", label: "没看懂" },
+    { id: "symptom_mismatch", label: "症状没识别准" },
+    { id: "too_conservative", label: "建议太保守" },
+    { id: "too_light", label: "建议太轻" },
+    { id: "department_mismatch", label: "科室不合适" },
+    { id: "flow_issue", label: "页面不好用" },
+  ];
+}
+
+function feedbackReasonById(id) {
+  return feedbackReasons().find((item) => item.id === id) || null;
+}
+
+function createFeedbackSummary(type = "", reasonId = "") {
+  const result = state.result || historyItems()[0] || {};
+  const reason = feedbackReasonById(reasonId);
+  const feedbackTypeLabel = {
+    understood: "我看懂了",
+    uncertain: "仍然不确定",
+    mismatch: "建议不符合",
+    detail: "补充原因",
+  }[type] || type || "-";
+  return [
+    "SymptomMate 试用反馈",
+    `版本: ${appVersion()}`,
+    `反馈: ${feedbackTypeLabel}`,
+    `原因: ${reason?.label || "-"}`,
+    `症状类别: ${result.symptom || "-"}`,
+    `风险等级: ${result.riskName || result.risk || "-"}`,
+    `推荐科室: ${result.department || "-"}`,
+    `结果编号: ${result.id || "-"}`,
+    `时间: ${new Date().toISOString()}`,
+    "说明: 此摘要不包含用户原始症状输入。",
+  ].join("\n");
+}
+
+async function copyFeedbackSummary() {
+  const summary = createFeedbackSummary("manual", "");
+  const copied = await copyText(summary);
+  showToast(copied ? "已复制脱敏反馈" : "复制失败，请手动截图或转发页面");
+}
+
+async function copyText(text) {
+  try {
+    if (window.navigator?.clipboard?.writeText) {
+      await window.navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch (error) {}
+  return false;
+}
+
+function appVersion() {
+  return "20260719-4";
 }
 
 function resultDecisionCopy(result) {
@@ -1297,6 +1372,8 @@ window.clearHistory = clearHistory;
 window.openHistory = openHistory;
 window.saveHistoryFromResult = saveHistoryFromResult;
 window.recordFeedback = recordFeedback;
+window.copyFeedbackSummary = copyFeedbackSummary;
+window.createFeedbackSummary = createFeedbackSummary;
 window.clearAnalyticsData = clearAnalyticsData;
 window.checkAiDebug = checkAiDebug;
 window.submitBetaAccess = submitBetaAccess;
