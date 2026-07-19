@@ -107,7 +107,7 @@ async function saveBetaCode(code) {
     clearStoredBetaCode();
     state.betaAccess.code = "";
     state.betaAccess.pendingCode = "";
-    state.betaAccess.error = verified.reason === "unauthorized" ? "试用口令不正确，请重新输入" : "暂时无法验证试用口令，请稍后再试";
+    state.betaAccess.error = betaVerificationMessage(verified.reason);
     render();
     return;
   }
@@ -1208,6 +1208,7 @@ async function fetchJson(url) {
 
 async function verifyBetaCode(code) {
   const config = window.SYMPTOMMATE_AI_CONFIG || {};
+  if (window.location?.protocol === "file:") return { ok: false, reason: "local_file" };
   if (!config.configEndpoint) return { ok: false, reason: "unavailable" };
   try {
     const response = await fetch(config.configEndpoint, {
@@ -1218,10 +1219,21 @@ async function verifyBetaCode(code) {
     });
     if (response.ok) return { ok: true };
     if (response.status === 401) return { ok: false, reason: "unauthorized" };
+    if (response.status === 429) return { ok: false, reason: "rate_limited" };
     return { ok: false, reason: "unavailable" };
   } catch (error) {
     return { ok: false, reason: "unavailable" };
   }
+}
+
+function betaVerificationMessage(reason) {
+  const messages = {
+    unauthorized: "试用口令不正确，请重新输入",
+    rate_limited: "验证次数过多，请 1 分钟后再试",
+    local_file: "本地 file:// 页面无法验证线上口令，请打开线上试用地址",
+    unavailable: "暂时无法连接 AI 代理，请稍后再试",
+  };
+  return messages[reason] || messages.unavailable;
 }
 
 function labelForAnswer(key) {
